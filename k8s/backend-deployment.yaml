@@ -1,0 +1,108 @@
+---
+# Layer 9 — Kubernetes Deployment (Backend)
+# kubectl apply -f k8s/backend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextgendb-backend
+  labels:
+    app: nextgendb
+    layer: backend
+spec:
+  replicas: 3          # 3 nodes as shown in the architecture diagram
+  selector:
+    matchLabels:
+      app: nextgendb-backend
+  template:
+    metadata:
+      labels:
+        app: nextgendb-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+        prometheus.io/path:   "/api/v1/metrics/raw"
+    spec:
+      containers:
+        - name: nextgendb-backend
+          image: nextgendb-backend:2.0.0
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PORT
+              value: "8000"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                secretKeyRef:
+                  name: nextgendb-secrets
+                  key: kafka-bootstrap
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nextgendb-secrets
+                  key: openai-api-key
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          # Layer 9 — Liveness & Readiness Probes
+          livenessProbe:
+            httpGet:
+              path: /api/v1/live
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextgendb-backend-svc
+spec:
+  selector:
+    app: nextgendb-backend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: LoadBalancer
+---
+# Layer 9 — Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nextgendb-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nextgendb-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

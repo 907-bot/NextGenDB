@@ -1,0 +1,38 @@
+# --- Stage 1: Build ---
+FROM python:3.10-slim as builder
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# --- Stage 2: Final ---
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Create a non-root user
+RUN groupadd -g 999 python && \
+    useradd -r -u 999 -g python python
+
+# Copy only the installed packages from the builder stage
+COPY --from=builder /root/.local /home/python/.local
+COPY . .
+
+# Set ownership and permissions
+RUN chown -R python:python /app
+USER python
+
+ENV PATH=/home/python/.local/bin:$PATH
+
+EXPOSE 8000
+
+# Use Gunicorn with Uvicorn workers for production scaling
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "backend.main:app", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]

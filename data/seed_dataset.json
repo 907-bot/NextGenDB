@@ -1,0 +1,8 @@
+[
+  {"id": "node1", "label": "User Query", "type": "entry"},
+  {"id": "node2", "label": "Planner", "type": "agent"},
+  {"id": "node3", "label": "Graph DB", "type": "storage"},
+  {"id": "node4", "label": "Causal Engine", "type": "reasoner"},
+  {"id": "node5", "label": "Temporal Engine", "type": "reasoner"},
+  {"id": "node6", "label": "Answer Generator", "type": "agent"}
+]
