@@ -9,6 +9,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # ── Layer 10: Logging first ───────────────────────────────────────────────────
 from .monitoring.tracing import setup_logging
@@ -66,6 +68,21 @@ app.include_router(ingest_router,     prefix="/api/v1")
 app.include_router(health_router,     prefix="/api/v1")
 app.include_router(monitoring_router, prefix="/api/v1")
 app.include_router(v2_router,         prefix="/api/v2")
+
+# ── Serve Frontend ────────────────────────────────────────────────────────────
+# Try to serve from root-level frontend/dist if it exists
+frontend_path = Path("frontend/dist")
+if frontend_path.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
+    
+    @app.exception_handler(404)
+    async def fallback_to_index(request, exc):
+        # If the request is not for /api, serve index.html
+        if not request.url.path.startswith("/api"):
+            return FileResponse(frontend_path / "index.html")
+        return {"detail": "Not Found"}
+else:
+    logger.warning("Frontend dist directory not found. Static file serving disabled.")
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────

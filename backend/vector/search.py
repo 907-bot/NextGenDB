@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import struct
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -176,7 +177,6 @@ class BM25Index:
         return re.sub(r"[^\w\s]", "", text.lower()).split() if text else []
 
     def add(self, doc_id: str, text: str):
-        import re
         tokens = self._tokenize(text)
         self._docs[doc_id] = tokens
         for tok in set(tokens):
@@ -189,7 +189,6 @@ class BM25Index:
         self._avg_len = total / len(self._docs)
 
     def search(self, query: str, top_k: int = 10) -> List[Tuple[str, float]]:
-        import re
         N      = len(self._docs)
         if N == 0:
             return []
