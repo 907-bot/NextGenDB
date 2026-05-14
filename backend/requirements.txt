@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+networkx
+torch
+torch-geometric
+openai
+numpy
+pandas
+python-multipart
+httpx
+# Layer 8 — Streaming
+aiokafka
+# Layer 10 — Monitoring & Observability
+prometheus-client
+opentelemetry-sdk
+opentelemetry-api
+opentelemetry-exporter-otlp
+structlog
