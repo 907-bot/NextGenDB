@@ -23,6 +23,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel
 
 from ..storage.engine   import PersistentGraphEngine
+from ..storage.document import DocumentEngine
 from ..query.lang       import QueryExecutor, QueryParser
 from ..vector.search    import VectorSearchEngine
 from ..causal.inference import CausalInferenceEngine
@@ -41,16 +42,18 @@ _vec:     Optional[VectorSearchEngine]    = None
 _causal:  Optional[CausalInferenceEngine] = None
 _memory:  Optional[AgenticMemoryStore]    = None
 _auth:    Optional[AuthManager]           = None
+_doc:     Optional[DocumentEngine]        = None
 
 
-def init_v2(engine, qe, vec, causal, memory, auth):
-    global _engine, _qe, _vec, _causal, _memory, _auth
+def init_v2(engine, qe, vec, causal, memory, auth, doc):
+    global _engine, _qe, _vec, _causal, _memory, _auth, _doc
     _engine = engine
     _qe     = qe
     _vec    = vec
     _causal = causal
     _memory = memory
     _auth   = auth
+    _doc    = doc
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -255,6 +258,31 @@ async def vector_search(req: VectorSearchRequest):
 async def index_document(doc_id: str, content: str, metadata: Dict[str, Any] = {}):
     _vec.index_document(doc_id, content, metadata)
     return {"doc_id": doc_id, "status": "indexed", "stats": _vec.stats()}
+
+
+# ── Traditional Document Engine (Vectorless) ──────────────────────────────────
+
+class DocumentUploadRequest(BaseModel):
+    doc_id:   str
+    content:  str
+    metadata: Optional[Dict[str, Any]] = None
+
+@router.post("/documents", dependencies=[Depends(_require(Permission.WRITE))])
+async def upload_document(req: DocumentUploadRequest):
+    """Store a file in the traditional database (Vectorless)."""
+    _doc.store_document(req.doc_id, req.content, req.metadata)
+    return {"doc_id": req.doc_id, "status": "stored", "size": len(req.content)}
+
+@router.get("/documents", dependencies=[Depends(_require(Permission.READ))])
+async def list_documents():
+    """List all stored files."""
+    return {"documents": _doc.list_documents()}
+
+@router.get("/documents/search", dependencies=[Depends(_require(Permission.READ))])
+async def search_documents(query: str, top_k: int = 5):
+    """Perform traditional vectorless keyword search."""
+    results = _doc.search(query, top_k)
+    return {"query": query, "results": results, "count": len(results)}
 
 
 # ── Causal Inference ──────────────────────────────────────────────────────────

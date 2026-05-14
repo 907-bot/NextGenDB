@@ -35,6 +35,7 @@ from .causal.flux         import TemporalFluxEngine
 
 # ── v2 new layers ─────────────────────────────────────────────────────────────
 from .storage.engine       import PersistentGraphEngine
+from .storage.document     import DocumentEngine
 from .query.lang           import QueryExecutor
 from .vector.search        import VectorSearchEngine
 from .causal.inference     import CausalInferenceEngine
@@ -117,6 +118,9 @@ async def on_startup():
     # ── Layer 5: Agent Memory ──────────────────────────────────────────────────
     memory = AgenticMemoryStore(engine=engine, persist_path=DATA_DIR / "agent_memory.json")
 
+    # ── Layer 5.5: Document Engine (Traditional / Vectorless) ─────────────────
+    doc_engine = DocumentEngine(data_dir=DATA_DIR)
+
     # ── Layer 6: Neural GNN Learner + Vectorless Retriever ──────────────────────
     gnn = AsyncGNNLearner(engine.graph)
     asyncio.create_task(gnn.training_loop())
@@ -144,7 +148,7 @@ async def on_startup():
         pass   # already exists
 
     # Inject v2 singletons
-    init_v2(engine, qe, vec, causal, memory, auth)
+    init_v2(engine, qe, vec, causal, memory, auth, doc_engine)
     
     # Inject v1 singletons (Sophisticated Neural Agent + Engines)
     from .graph.graph_model import GraphModel
@@ -155,6 +159,7 @@ async def on_startup():
     app.state.vec    = vec
     app.state.memory = memory
     app.state.auth   = auth
+    app.state.doc    = doc_engine
     app.state.gnn    = gnn
     app.state.agent  = agent
 
