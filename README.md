@@ -27,15 +27,25 @@ NextGenDB is a futuristic, end-to-end AI database system that combines graph-bas
 docker-compose up --build
 ```
 
-## 🧠 Architecture Implementation
-1. **User Query** -> Heuristic-based Neural Planner decomposes intent.
-2. **Agent Planning** -> Generates steps for Retrieval, Causal Analysis, and Temporal Reasoning.
-3. **Retrieval** -> Actual MultiDiGraph traversal via NetworkX.
-4. **Reasoning** -> 
+## 🧠 Architecture Implementation (All 10 Layers)
+1. **User Query (L1/L2)** -> Heuristic-based Neural Planner decomposes intent.
+2. **Agent Planning (L2)** -> Generates steps for Retrieval, Causal Analysis, and Temporal Reasoning.
+3. **Retrieval (L3/L5)** -> Actual MultiDiGraph traversal via NetworkX.
+4. **Reasoning (L4)** -> 
    - **Causal**: Real-time out-degree influence analysis.
    - **Temporal**: Event sequence detection using node timestamps.
-5. **Synthesis** -> Dynamic answer generation with uncertainty estimation.
-6. **Learning** -> Background GNN trainer (PyTorch Geometric) optimizes pattern weights.
+5. **Synthesis (L2)** -> Dynamic answer generation with uncertainty estimation.
+6. **Learning (L6)** -> Background GNN trainer (PyTorch Geometric) optimizes pattern weights.
+7. **Storage (L7)** -> In-memory MultiDiGraph (Extensible to Neo4j/ArangoDB).
+8. **Streaming (L8)** -> Kafka-integrated ingestion pipeline with HTTP fallback for real-time mutations.
+9. **Distributed (L9)** -> Node registry and health probes for Kubernetes orchestration.
+10. **Observability (L10)** -> Prometheus metrics, structured JSON logging, and OpenTelemetry tracing.
+
+## 🛠️ Production Ready Features
+- **Dockerized Stack**: Full orchestration including Kafka, Prometheus, and Grafana.
+- **Observability Dashboard**: Integrated live monitoring panel for all 10 layers.
+- **Self-Healing**: Kubernetes-ready liveness and readiness probes.
+- **Neural Dashboard**: Real-time SVG topology visualization of the neural graph.
 
 ---
 Built with ❤️ by Antigravity

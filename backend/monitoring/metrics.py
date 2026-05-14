@@ -24,6 +24,12 @@ except ImportError:
     _PROM_AVAILABLE = False
     logger.warning("prometheus_client not installed — metrics will be in-process only.")
 
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
+
 
 # ── Metric definitions ───────────────────────────────────────────────────────
 if _PROM_AVAILABLE:
@@ -41,6 +47,7 @@ if _PROM_AVAILABLE:
     GRAPH_EDGES = Gauge("nextgendb_graph_edges", "Current number of edges in the graph")
     GNN_LOSS    = Gauge("nextgendb_gnn_loss", "Latest GNN training loss")
     GNN_STEPS   = Counter("nextgendb_gnn_steps_total", "Total GNN training steps completed")
+    MEMORY_USAGE = Gauge("nextgendb_memory_usage_bytes", "Current memory usage of the NextGenDB process")
     STREAM_EVENTS = Counter(
         "nextgendb_stream_events_total",
         "Total streaming events ingested",
@@ -67,6 +74,14 @@ class _InProcessMetrics:
 
     def snapshot(self) -> dict:
         avg_lat = sum(self.latencies[-100:]) / max(len(self.latencies[-100:]), 1)
+        mem_mb = 0.0
+        if _PSUTIL_AVAILABLE:
+            import os
+            process = psutil.Process(os.getpid())
+            mem_mb = process.memory_info().rss / (1024 * 1024)
+            if _PROM_AVAILABLE:
+                MEMORY_USAGE.set(process.memory_info().rss)
+                
         return {
             "query_total":     self.query_total,
             "avg_latency_ms":  round(avg_lat * 1000, 2),
@@ -76,6 +91,7 @@ class _InProcessMetrics:
             "gnn_steps":       self.gnn_steps,
             "stream_events":   self.stream_events,
             "avg_confidence":  round(sum(self.confidences[-100:]) / max(len(self.confidences[-100:]), 1), 4),
+            "memory_mb":       round(mem_mb, 2),
         }
 
 
@@ -125,6 +141,10 @@ def get_metrics_snapshot() -> dict:
 def get_prometheus_output():
     """Returns raw Prometheus text format, or None if unavailable."""
     if _PROM_AVAILABLE:
+        if _PSUTIL_AVAILABLE:
+            import os
+            process = psutil.Process(os.getpid())
+            MEMORY_USAGE.set(process.memory_info().rss)
         return generate_latest(), CONTENT_TYPE_LATEST
     return None, None
 

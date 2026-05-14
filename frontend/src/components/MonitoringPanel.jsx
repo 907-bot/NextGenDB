@@ -100,12 +100,12 @@ export default function MonitoringPanel() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <MetricCard icon={Zap}      label="Queries Total"   value={(m.query_total?.success ?? 0) + (m.query_total?.error ?? 0)} color="cyan" />
         <MetricCard icon={Activity}  label="Avg Latency"     value={m.avg_latency_ms ?? 0} unit="ms" color="magenta" />
         <MetricCard icon={Database}  label="Graph Nodes"     value={m.graph_nodes ?? 0} color="cyan" />
         <MetricCard icon={Database}  label="Graph Edges"     value={m.graph_edges ?? 0} color="cyan" />
-        <MetricCard icon={Cpu}       label="GNN Steps"       value={m.gnn_steps ?? 0} color="green" />
+        <MetricCard icon={Cpu}       label="Memory Usage"    value={m.memory_mb ?? 0} unit="MB" color="green" />
         <MetricCard icon={Radio}     label="Stream Events"   value={Object.values(m.stream_events ?? {}).reduce((a, b) => a + b, 0)} color="yellow" />
       </div>
 
