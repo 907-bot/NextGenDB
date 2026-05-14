@@ -8,7 +8,7 @@ import ConfidenceMeter from './components/ConfidenceMeter';
 import TimelineView from './components/TimelineView';
 import MonitoringPanel from './components/MonitoringPanel';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API = import.meta.env.VITE_API_URL || 'https://nextgendb.onrender.com/api/v1';
 
 function App() {
   const [loading, setLoading] = useState(false);
