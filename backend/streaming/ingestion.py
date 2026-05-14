@@ -10,6 +10,9 @@ from ..graph.graph_model import GraphModel
 logger = logging.getLogger("nextgendb.streaming.ingestion")
 
 
+from ..causal.flux import TemporalFluxEngine
+from typing import Optional
+
 class GraphIngestionHandler:
     """
     Receives a decoded Kafka event (or any dict) and applies it to
@@ -19,8 +22,9 @@ class GraphIngestionHandler:
       - DELETE_NODE
     """
 
-    def __init__(self, graph: GraphModel):
+    def __init__(self, graph: GraphModel, flux_engine: Optional[TemporalFluxEngine] = None):
         self._graph = graph
+        self._flux = flux_engine
         self._processed = 0
         self._errors = 0
         self._seen_ids: set[str] = set()  # simple deduplication window
@@ -51,6 +55,11 @@ class GraphIngestionHandler:
             props     = event.get("properties", {})
             props["label"] = event.get("label", node_id)
             self._graph.add_node(node_id, props)
+            
+            # Record flux
+            if self._flux:
+                self._flux.record_state(node_id, props)
+                
             logger.info("Graph: UPSERT_NODE '%s'", node_id)
 
         elif etype == "UPSERT_EDGE":
@@ -68,7 +77,10 @@ class GraphIngestionHandler:
         elif etype == "DELETE_NODE":
             node_id = event["node_id"]
             if node_id in self._graph.graph:
-                self._graph.graph.remove_node(node_id)
+                # We don't have a direct remove_node in our GraphModel wrapper yet, 
+                # but we can access the underlying graph for deletion if needed, 
+                # or better, add a delete method to GraphModel.
+                self._graph.engine.delete_node(node_id)
                 logger.info("Graph: DELETE_NODE '%s'", node_id)
 
         else:
@@ -82,3 +94,4 @@ class GraphIngestionHandler:
             "graph_nodes": len(self._graph.graph.nodes),
             "graph_edges": len(self._graph.graph.edges),
         }
+

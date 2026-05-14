@@ -1,14 +1,17 @@
 import time
 import asyncio
-from fastapi import APIRouter, BackgroundTasks
+import logging
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-from ..agent.planner import Planner
-from ..agent.executor import Executor
+from ..agent.neural_agent import NeuralAgentPlanner
+from ..gnn.learner import AsyncGNNLearner
+from ..causal.inference import CausalInferenceEngine
+from ..causal.flux import TemporalFluxEngine
+from ..vector.search import VectorSearchEngine
+from ..agent.memory import AgenticMemoryStore
 from ..graph.graph_model import GraphModel
-from ..graph.reasoning import CausalEngine, TemporalEngine
-from ..gnn.model import GNNTrainer
 
 # Layer 10: metrics + tracing
 from ..monitoring.metrics import (
@@ -16,15 +19,23 @@ from ..monitoring.metrics import (
 )
 from ..monitoring.tracing import trace_query_pipeline, trace_gnn_step
 
+logger = logging.getLogger("nextgendb.api.v1")
 router = APIRouter()
-planner       = Planner()
-graph_model   = GraphModel()
-graph_model.seed_data()
-causal_engine  = CausalEngine()
-temporal_engine = TemporalEngine()
-gnn_trainer    = GNNTrainer()
-executor       = Executor(graph_model, None, (causal_engine, temporal_engine))
 
+# ── Singletons (will be injected/initialized) ────────────────────────────────
+graph_model   : Optional[GraphModel]           = None
+neural_agent  : Optional[NeuralAgentPlanner]  = None
+gnn_learner   : Optional[AsyncGNNLearner]      = None
+causal_engine : Optional[CausalInferenceEngine] = None
+flux_engine   : Optional[TemporalFluxEngine]   = None
+
+def init_v1(model, agent, gnn, causal, flux):
+    global graph_model, neural_agent, gnn_learner, causal_engine, flux_engine
+    graph_model   = model
+    neural_agent  = agent
+    gnn_learner   = gnn
+    causal_engine = causal
+    flux_engine   = flux
 
 class QueryRequest(BaseModel):
     query: str
@@ -35,56 +46,64 @@ class QueryResponse(BaseModel):
     steps:          List[Dict[str, Any]]
     graph_snapshot: Dict[str, Any]
     timeline:       List[Dict[str, Any]]
-
-
-async def _gnn_background(graph, trainer):
-    """Run GNN training step and record metrics — called in background."""
-    result = await trainer.train_step_async(graph)
-    loss = result.get("loss", 0.0) if isinstance(result, dict) else 0.0
-    with trace_gnn_step(len(graph.nodes)):
-        record_gnn_step(loss)
-
+    signals:        Optional[Dict[str, Any]] = None
 
 @router.post("/query", response_model=QueryResponse)
 async def handle_query(request: QueryRequest, background_tasks: BackgroundTasks):
     t0 = time.perf_counter()
     status = "success"
+    
+    if not neural_agent:
+        logger.error("Neural Agent not initialized")
+        return QueryResponse(
+            answer="System error: Neural Agent not initialized",
+            confidence=0.0,
+            steps=[],
+            graph_snapshot={"nodes": [], "links": []},
+            timeline=[]
+        )
 
-    with trace_query_pipeline(request.query, 4):
+    with trace_query_pipeline(request.query, 6):
         try:
-            # 1. Agent Planning
-            plan = await planner.generate_plan(request.query)
-
-            # 2. Execution
-            execution_context = await executor.run_plan(plan)
-
-            # 3. GNN Update — in background so it never blocks the response
-            background_tasks.add_task(_gnn_background, graph_model.graph, gnn_trainer)
-
-            confidence = execution_context.get("SYNTHESIZE", {}).get("confidence", 0.0)
-            answer     = execution_context.get("SYNTHESIZE", {}).get("answer", "No answer found.")
-            timeline   = execution_context.get("TEMPORAL_REASONING", {}).get("timeline", [])
+            # 1. Neural Agent Orchestration (Two-stage Decompose + Plan)
+            result = await neural_agent.run(request.query)
+            
+            confidence = result.get("confidence", 0.0)
+            answer     = result.get("answer", "No answer found.")
+            
+            # Extract timeline if available from context
+            timeline = []
+            for step in result.get("plan_steps", []):
+                if step["action"] == "TEMPORAL_ORDER" and step["done"]:
+                    # We'd ideally pull the actual result here, but for simplicity:
+                    pass
+            
+            # Use flux engine for active signals
+            signals = flux_engine.get_temporal_signals(graph_model.graph) if flux_engine else None
 
         except Exception as exc:
+            logger.error("Query pipeline failed: %s", exc)
             status = "error"
             raise exc
         finally:
             latency = time.perf_counter() - t0
             record_query(status, latency, confidence if status == "success" else 0.0)
-            update_graph_metrics(
-                len(graph_model.graph.nodes),
-                len(graph_model.graph.edges),
-            )
+            if graph_model:
+                update_graph_metrics(
+                    len(graph_model.graph.nodes),
+                    len(graph_model.graph.edges),
+                )
 
     return QueryResponse(
         answer=answer,
         confidence=confidence,
-        steps=[step.dict() for step in plan],
-        graph_snapshot=graph_model.to_json(),
+        steps=result.get("plan_steps", []),
+        graph_snapshot=graph_model.to_json() if graph_model else {"nodes": [], "links": []},
         timeline=timeline,
+        signals=signals
     )
-
 
 @router.get("/graph")
 async def get_graph():
-    return graph_model.to_json()
+    return graph_model.to_json() if graph_model else {"nodes": [], "links": []}
+

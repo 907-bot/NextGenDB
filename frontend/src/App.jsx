@@ -8,7 +8,10 @@ import ConfidenceMeter from './components/ConfidenceMeter';
 import TimelineView from './components/TimelineView';
 import MonitoringPanel from './components/MonitoringPanel';
 
-const API = import.meta.env.VITE_API_URL || 'https://nextgendb.onrender.com/api/v1';
+const API = import.meta.env.VITE_API_URL || 
+           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:8000/api/v1' 
+            : '/api/v1');
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -54,7 +57,7 @@ function App() {
             NextGenDB
           </h1>
           <p className="text-white/40 text-xs font-mono mt-1 tracking-widest uppercase">
-            Neural Graph Intelligence Engine — 10 Layers Active
+            Neural Graph Intelligence Engine — 15 Layers Active
           </p>
         </div>
 

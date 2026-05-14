@@ -21,7 +21,7 @@ setup_logging(
 logger = logging.getLogger("nextgendb.main")
 
 # ── v1 layers (existing) ──────────────────────────────────────────────────────
-from .api.routes          import router as core_router
+from .api.routes          import router as core_router, init_v1, graph_model as legacy_model
 from .api.ingest_routes   import router as ingest_router
 from .distributed.health  import router as health_router, init_health_refs
 from .distributed.registry import get_registry, registry_maintenance_loop
@@ -29,6 +29,9 @@ from .monitoring.dashboard import router as monitoring_router
 from .streaming.producer  import get_producer
 from .streaming.consumer  import KafkaEventConsumer
 from .streaming.ingestion  import GraphIngestionHandler
+from .gnn.learner         import AsyncGNNLearner
+from .agent.neural_agent  import NeuralAgentPlanner
+from .causal.flux         import TemporalFluxEngine
 
 # ── v2 new layers ─────────────────────────────────────────────────────────────
 from .storage.engine       import PersistentGraphEngine
@@ -114,7 +117,23 @@ async def on_startup():
     # ── Layer 5: Agent Memory ──────────────────────────────────────────────────
     memory = AgenticMemoryStore(engine=engine, persist_path=DATA_DIR / "agent_memory.json")
 
-    # ── Layer 6: Security / Auth ───────────────────────────────────────────────
+    # ── Layer 6: Neural GNN Learner + Vectorless Retriever ──────────────────────
+    gnn = AsyncGNNLearner(engine.graph)
+    asyncio.create_task(gnn.training_loop())
+
+    # ── Layer 7: Temporal Flux Engine ──────────────────────────────────────────
+    flux = TemporalFluxEngine()
+
+    # ── Layer 8: Neural Agent (Decompose + Plan) ───────────────────────────────
+    agent = NeuralAgentPlanner(
+        engine=engine, 
+        gnn_learner=gnn, 
+        vec_engine=vec, 
+        causal_engine=causal, 
+        memory_store=memory
+    )
+
+    # ── Layer 9: Security / Auth ───────────────────────────────────────────────
     jwt_secret = os.getenv("JWT_SECRET", "nextgendb-dev-secret-change-in-prod")
     auth = AuthManager(jwt_secret=jwt_secret)
     # Create extra default users
@@ -126,17 +145,20 @@ async def on_startup():
 
     # Inject v2 singletons
     init_v2(engine, qe, vec, causal, memory, auth)
+    
+    # Inject v1 singletons (Sophisticated Neural Agent + Engines)
+    from .graph.graph_model import GraphModel
+    v1_model = GraphModel(engine=engine)
+    init_v1(v1_model, agent, gnn, causal, flux)
+
     app.state.engine = engine
     app.state.vec    = vec
     app.state.memory = memory
     app.state.auth   = auth
+    app.state.gnn    = gnn
+    app.state.agent  = agent
 
-    # ── Layer 7: Share engine with v1 routes (backward compat) ─────────────────
-    from .api.routes import graph_model
-    # Inject the persistent engine's graph into the legacy GraphModel wrapper
-    graph_model.graph = engine.graph
-
-    # ── Layers 8–10: Streaming + Distributed + Monitoring ─────────────────────
+    # ── Layers 10–12: Streaming + Distributed + Monitoring ─────────────────────
     registry = get_registry()
     host = os.getenv("POD_IP", "127.0.0.1")
     port = int(os.getenv("PORT", 8000))
@@ -146,7 +168,7 @@ async def on_startup():
     asyncio.create_task(registry_maintenance_loop())
 
     producer = await get_producer()
-    handler  = GraphIngestionHandler(graph_model)
+    handler  = GraphIngestionHandler(v1_model)
     consumer = KafkaEventConsumer(on_event=handler.on_event)
     await consumer.start()
 
@@ -154,9 +176,9 @@ async def on_startup():
     app.state.producer = producer
     app.state.ingestion = handler
 
-    init_health_refs(graph_model, producer)
+    init_health_refs(v1_model, producer)
 
-    # ── Layer 11: Background checkpoint ───────────────────────────────────────
+    # ── Layer 13: Background checkpoint ───────────────────────────────────────
     asyncio.create_task(engine.background_checkpoint_loop(interval_seconds=300))
 
     logger.info(
