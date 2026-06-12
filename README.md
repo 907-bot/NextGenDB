@@ -48,4 +48,4 @@ docker-compose up --build
 - **Neural Dashboard**: Real-time SVG topology visualization of the neural graph.
 
 ---
-Built with ❤️ by Antigravity
+
